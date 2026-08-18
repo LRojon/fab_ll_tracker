@@ -19,9 +19,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - run: npm install
+
+      - name: Install Playwright's Chromium
+        run: npx playwright install --with-deps chromium
 
       - run: npm run scrape
 

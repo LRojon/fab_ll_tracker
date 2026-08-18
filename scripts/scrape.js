@@ -5,11 +5,51 @@
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { chromium } from "playwright";
 import * as cheerio from "cheerio";
 
 const LL_URL = "https://fabtcg.com/living-legend/";
 const DATA_PATH = new URL("../data/snapshots.json", import.meta.url);
 const MAX_SNAPSHOTS = 52; // keep about a year of weekly history
+
+// A plain fetch() from GitHub Actions runners gets a 403 — their IPs are
+// datacenter ranges that fabtcg.com's anti-bot protection (Cloudflare)
+// blocks outright, regardless of headers. Driving a real headless browser
+// changes the network/TLS fingerprint enough to get through.
+async function fetchRenderedHtml() {
+  const browser = await chromium.launch({
+    args: ["--disable-blink-features=AutomationControlled"],
+  });
+  try {
+    const context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      locale: "en-US",
+      viewport: { width: 1280, height: 900 },
+    });
+    // Hide the most obvious automation tell.
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    });
+
+    const page = await context.newPage();
+    const response = await page.goto(LL_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+    if (!response || !response.ok()) {
+      const status = response ? response.status() : "no response";
+      throw new Error(`Navigation failed: HTTP ${status}`);
+    }
+
+    // Give any client-side rendering a moment; don't hard-fail if the
+    // selector never appears, parseLeaderboard() will just find nothing
+    // and we'll log a preview for debugging.
+    await page.waitForSelector("table", { timeout: 15000 }).catch(() => {});
+
+    return await page.content();
+  } finally {
+    await browser.close();
+  }
+}
 
 function parseLeaderboard(html) {
   const $ = cheerio.load(html);
@@ -57,17 +97,14 @@ function parseLeaderboard(html) {
 }
 
 async function main() {
-  const res = await fetch(LL_URL, {
-    headers: {
-      "User-Agent": "fab-ll-data-bot/1.0 (weekly public leaderboard snapshot; see repo README)",
-    },
-  });
-  if (!res.ok) throw new Error(`Fetch failed: HTTP ${res.status}`);
+  const html = await fetchRenderedHtml();
+  console.log(`Fetched ${html.length} bytes of rendered HTML.`);
 
-  const html = await res.text();
   const heroes = parseLeaderboard(html);
 
   if (Object.keys(heroes).length === 0) {
+    console.error("--- HTML preview (first 1000 chars) for debugging ---");
+    console.error(html.slice(0, 1000));
     throw new Error("Parsed 0 heroes — the site layout may have changed, check the selectors.");
   }
 

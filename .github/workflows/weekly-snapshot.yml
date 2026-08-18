@@ -1,0 +1,38 @@
+name: Weekly LL snapshot
+
+on:
+  schedule:
+    # fabtcg's own weekly LL check typically lands Monday; running Tuesday
+    # morning UTC gives it a buffer. Adjust the cron to taste — this does
+    # NOT run on every push, only on this schedule and manual triggers.
+    - cron: "0 6 * * 2"
+  workflow_dispatch: {} # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - run: npm run scrape
+
+      - name: Commit snapshot if changed
+        run: |
+          git config user.name "fab-ll-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/snapshots.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Weekly LL snapshot $(date -u +%F)"
+            git push
+          fi

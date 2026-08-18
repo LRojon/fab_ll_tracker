@@ -1,0 +1,13 @@
+{
+  "name": "fab-ll-data-source",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Weekly scraper publishing Flesh and Blood Living Legend leaderboard snapshots as JSON.",
+  "scripts": {
+    "scrape": "node scripts/scrape.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}
